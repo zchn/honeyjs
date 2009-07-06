@@ -58,6 +58,8 @@ js_del_prop(JSContext* jscx, JSObject* jsobj, jsval key, jsval* val)
     pykey = js2py(pycx, key);
     if(pykey == NULL) goto error;
 
+    if(Context_has_access(pycx, jscx, pyobj, pykey) <= 0) goto error;
+
     if(PyObject_DelItem(pyobj, pykey) < 0)
     {
         PyErr_Clear();
@@ -101,6 +103,8 @@ js_get_prop(JSContext* jscx, JSObject* jsobj, jsval key, jsval* val)
     pykey = js2py(pycx, key);
     if(pykey == NULL) goto done;
 
+    if(Context_has_access(pycx, jscx, pyobj, pykey) <= 0) goto done;
+    
     // Yeah. It's ugly as sin.
     if(PyString_Check(pykey) || PyUnicode_Check(pykey))
     {
@@ -177,6 +181,8 @@ js_set_prop(JSContext* jscx, JSObject* jsobj, jsval key, jsval* val)
         goto error;
     }
 
+    if(Context_has_access(pycx, jscx, pyobj, pykey) <= 0) goto error;
+
     pyval = js2py(pycx, *val);
     if(pyval == NULL)
     {
@@ -218,12 +224,6 @@ js_finalize(JSContext* jscx, JSObject* jsobj)
     JS_EndRequest(jscx);
 
     Py_DECREF(pyobj);
-
-    // Technically, this could turn out to be nasty. If
-    // this is the last object keeping the python cx
-    // alive, then this call could be deleting the cx
-    // we're about to return to.
-    Py_DECREF(pycx);
 }
 
 PyObject*
@@ -262,6 +262,7 @@ js_call(JSContext* jscx, JSObject* jsobj, uintN argc, jsval* argv, jsval* rval)
     PyObject* pyobj = NULL;
     PyObject* tpl = NULL;
     PyObject* ret = NULL;
+    PyObject* attrcheck = NULL;
     JSBool jsret = JS_FALSE;
     
     pycx = (Context*) JS_GetContextPrivate(jscx);
@@ -278,6 +279,12 @@ js_call(JSContext* jscx, JSObject* jsobj, uintN argc, jsval* argv, jsval* rval)
         JS_ReportError(jscx, "Object is not callable.");
         goto error;
     }
+
+    // Use '__call__' as a notice that we want to execute a function.
+    attrcheck = PyString_FromString("__call__");
+    if(attrcheck == NULL) goto error;
+
+    if(Context_has_access(pycx, jscx, pyobj, attrcheck) <= 0) goto error;
 
     tpl = mk_args_tuple(pycx, jscx, argc, argv);
     if(tpl == NULL) goto error;
@@ -307,6 +314,7 @@ error:
 success:
     Py_XDECREF(tpl);
     Py_XDECREF(ret);
+    Py_XDECREF(attrcheck);
     return jsret;
 }
 
@@ -317,6 +325,7 @@ js_ctor(JSContext* jscx, JSObject* jsobj, uintN argc, jsval* argv, jsval* rval)
     PyObject* pyobj = NULL;
     PyObject* tpl = NULL;
     PyObject* ret = NULL;
+    PyObject* attrcheck = NULL;
     JSBool jsret = JS_FALSE;
     
     pycx = (Context*) JS_GetContextPrivate(jscx);
@@ -339,6 +348,12 @@ js_ctor(JSContext* jscx, JSObject* jsobj, uintN argc, jsval* argv, jsval* rval)
         PyErr_SetString(PyExc_TypeError, "Object is not a Type object.");
         goto error;
     }
+
+    // Use '__init__' to signal use as a constructor.
+    attrcheck = PyString_FromString("__init__");
+    if(attrcheck == NULL) goto error;
+
+    if(Context_has_access(pycx, jscx, pyobj, attrcheck) <= 0) goto error;
 
     tpl = mk_args_tuple(pycx, jscx, argc, argv);
     if(tpl == NULL) goto error;
@@ -472,12 +487,6 @@ py2js_object(Context* cx, PyObject* pyobj)
         goto error;
     }
 
-    /*
-        As noted in Context_new, here we must ref the Python context
-        to make sure it stays alive while a Python object may be
-        referenced in the JS VM.
-    */
-    Py_INCREF(cx);
     ret = OBJECT_TO_JSVAL(jsobj);
     goto success;
 
