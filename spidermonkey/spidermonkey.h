@@ -13,6 +13,7 @@
 #include "structmember.h"
 
 #include <jsapi.h>
+#include <jsdbgapi.h>
 
 #include "runtime.h"
 #include "context.h"

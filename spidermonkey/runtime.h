@@ -17,6 +17,7 @@
 typedef struct {
     PyObject_HEAD
     JSRuntime* rt;
+    int is_traced;
 } Runtime;
 
 extern PyTypeObject _RuntimeType;

@@ -1,4 +1,4 @@
-/*
+/* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
  * Copyright 2009 Paul J. Davis <paul.joseph.davis@gmail.com>
  *
  * This file is part of the python-spidermonkey package released
@@ -8,7 +8,114 @@
 
 #include "spidermonkey.h"
 
-PyObject*
+
+JSTrapStatus js_intterupt_handler(JSContext *cx, JSScript *script, jsbytecode *pc, jsval *rval,void *closure)
+{
+    JSOp opcode = 0;
+    JSStackFrame * fp = NULL;
+    jsval r_val = 0;
+    jsval l_val = 0;
+    
+    /* TODO:these should be stored in the context's private data area.
+      global top_value_has_sc
+    global malvalues
+    */
+    
+    opcode =  JS_GetTrapOpcode(cx, script, pc);
+    fp = NULL;
+    JS_FrameIterator(cx,&fp);
+    r_val = l_val = 0;
+    switch(opcode)
+    {
+    case JSOP_SETNAME:
+    case JSOP_SETPROP:
+    {
+        r_val = fp->regs->sp[-1];
+        l_val = get_opcode_arg(cx,script,pc);
+        break;
+    }
+    case JSOP_SETELEM:
+    {
+        r_val = fp->regs->sp[-1];
+        l_val = fp->regs->sp[-3];
+        break;
+    }
+    case JSOP_SETVAR:
+    {
+        r_val = fp->regs->sp[-1];
+        l_val = (jsval)&(fp->vars[GET_VARNO(pc)]); // TODO: FIXIT
+        break;
+    }
+    case JSOP_SETARG:
+    {
+        r_val = fp->regs->sp[-1];
+        l_val = (jsval)&(fp->argv[GET_ARGNO(pc)]); // TODO: FIXIT
+        break;
+    }
+    }
+    if(r_val != 0 &&
+       JSVAL_IS_STRING(r_val) &&
+       JS_GetStringLength(JSVAL_TO_STRING(r_val)) > 30) //TODO: Adjust the threshold
+    {
+        int r = 0;
+        r = check_buffer(r_val);
+        if(r >= 0)
+        {
+            //Shellcode DETECTED!
+            PyObject* alert = NULL;
+            PyObject* param = NULL;
+            jschar *jschars = NULL;
+            char *bytes = NULL;
+            Context* pycx = NULL;
+            int length = 0;
+            jschars = JS_GetStringChars(JSVAL_TO_STRING(r_val));
+            bytes = (char *)jschars;
+            length = JS_GetStringLength(JSVAL_TO_STRING(r_val));
+            
+            param = Py_BuildValue("is{}s#",
+                                  -1,
+                                  "Shellcode Detected!",
+                                  bytes,
+                                  length*sizeof(jschar));
+            if(param == NULL) goto error;
+            
+            alert = PyObject_CallObject((PyObject*)ShellcodeAlertType,param);
+            if(alert == NULL) goto error;
+            pycx = (Context*) JS_GetContextPrivate(jscx);
+
+            if(PyList_Append(pycx->alertlist,alert) != 0)
+            {
+                goto error;
+            }
+            //TODO: FIXME: is it necesary to DECREF alert?
+            
+            /*         if rt.malvariables.has_key(l_val): */
+            /*             alert = rt.malvariables[l_val] */
+            /*         else: */
+            /*             alert = Alert(0,l_val,"Shellcode Detected",{"hit":0}) */
+            /*             rt.malvariables[l_val]=alert */
+            /*             rt.alerts.append(alert) */
+            /*         alert.misc["hit"]+=1 */
+
+            /*         jschars = JS_GetStringChars(JSVAL_TO_STRING(r_val)) */
+            /*         bytes = <char *>jschars */
+            /*         length = JS_GetStringLength(JSVAL_TO_STRING(r_val)) */
+            /*         s = PyString_FromStringAndSize(bytes, length*2)#sizeof(jschar)) */
+            /*         alert.misc["contents"] = s */
+            /*         alert.misc["offset"] = r */
+            /*         #f = open("shellcodes/"+str(l_val)+".sc","w") */
+            /*         #f.write(s) */
+            /*         #f.close() */
+            /*         #print "DEBUG: !!!SC DETECTED at "+str(l_val)+"="+str(r_val)+"size:"+str(length*2) */
+        }
+    }
+    return JSTRAP_CONTINUE;
+error:
+    return  JSTRAP_ERROR;
+}
+
+
+Pyobject*
 Runtime_new(PyTypeObject* type, PyObject* args, PyObject* kwargs)
 {
     Runtime* self = NULL;
@@ -26,6 +133,8 @@ Runtime_new(PyTypeObject* type, PyObject* args, PyObject* kwargs)
         goto error;
     }
 
+    self->is_traced = 0;
+    
     goto success;
 
 error:
@@ -84,6 +193,43 @@ success:
     Py_XDECREF(tpl);
     return cx;
 }
+
+PyObject*
+Runtime_switch_tracing(Runtime* self, PyObject* args, PyObject* kwargs)
+{
+    int status = self->is_traced;
+
+    char* keywords[] = {"status",  NULL};
+
+    if(!PyArg_ParseTupleAndKeywords(
+        args, kwargs,
+        "|i",
+        keywords,
+        &status
+    )) goto error;
+
+    if ( status != self->is_traced )
+    {
+        if ( status == 0 )
+        {
+             JS_ClearInterrupt(JSRuntime *rt, JSTrapHandler *handlerp, void **closurep);
+        }
+        else
+        {
+             JS_SetInterrupt(JSRuntime *rt, JSTrapHandler handler, void *closure);
+        }
+    }
+    goto success;
+
+error:
+    Py_XDECREF(cx);
+
+success:
+    Py_XDECREF(tpl);
+    return cx;
+}
+
+
 
 static PyMemberDef Runtime_members[] = {
     {NULL}
