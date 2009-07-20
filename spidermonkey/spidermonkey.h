@@ -45,4 +45,8 @@ extern PyTypeObject* IteratorType;
 extern PyTypeObject* HashCObjType;
 extern PyObject* JSError;
 
+extern PyTypeObject* HeapsprayAlertType;
+extern PyTypeObject* ShellcodeAlertType;
+
+
 #endif

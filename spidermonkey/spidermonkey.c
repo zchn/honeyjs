@@ -8,6 +8,32 @@
 
 #include "spidermonkey.h"
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <signal.h>
+#include <string.h>
+
+
+void dump(int signo)
+{
+        char buf[1024];
+        char cmd[1024];
+        FILE *fh;
+
+        snprintf(buf, sizeof(buf), "/proc/%d/cmdline", getpid());
+        if(!(fh = fopen(buf, "r")))
+                exit(0);
+        if(!fgets(buf, sizeof(buf), fh))
+                exit(0);
+        fclose(fh);
+        if(buf[strlen(buf) - 1] == '\n')
+                buf[strlen(buf) - 1] = '\0';
+        snprintf(cmd, sizeof(cmd), "gdb %s %d", buf, getpid());
+        system(cmd);
+        
+        exit(0);
+}
+
 #ifndef PyMODINIT_FUNC
 #define PyMODINIT_FUNC void
 #endif
@@ -22,6 +48,11 @@ PyTypeObject* IteratorType = NULL;
 PyTypeObject* HashCObjType = NULL;
 PyObject* JSError = NULL;
 
+PyObject* hcalertModule = NULL;
+PyTypeObject* HeapsprayAlertType = NULL;
+PyTypeObject* ShellcodeAlertType = NULL;
+
+
 static PyMethodDef spidermonkey_methods[] = {
     {NULL}
 };
@@ -30,7 +61,12 @@ PyMODINIT_FUNC
 initspidermonkey(void)
 {
     PyObject* m;
-    
+    PyObject* r;
+    PyObject* str;
+
+    //Only for core DEBUG
+    signal(SIGSEGV, &dump);
+
     if(PyType_Ready(&_RuntimeType) < 0) return;
     if(PyType_Ready(&_ContextType) < 0) return;
     if(PyType_Ready(&_ObjectType) < 0) return;
@@ -85,4 +121,37 @@ initspidermonkey(void)
     PyModule_AddObject(m, "JSError", JSError);
     
     SpidermonkeyModule = m;
+
+    hcalertModule = PyImport_ImportModule("hcalert");
+    if ( hcalertModule == NULL) return;    
+    
+    str = PyString_FromString("ShellcodeAlert");
+    if (str == NULL) return;
+    r = PyObject_GetAttr(hcalertModule,str);
+    Py_DECREF(str);
+    str = NULL;
+    //Check if r is a type object
+    if( !PyCallable_Check(r) )
+    {
+        PyErr_SetString(PyExc_TypeError,
+                        "hcalert.ShellcodeAlert must be callable");
+        //TODO: just Callable? or must type object?
+        return;
+    }
+    ShellcodeAlertType = (PyTypeObject *)r;
+    
+    str = PyString_FromString("HeapsprayAlert");
+    if (str == NULL) return;
+    r = PyObject_GetAttr(hcalertModule,str);
+    Py_DECREF(str);
+    str = NULL;
+    //Check if r is a type object
+    if( !PyCallable_Check(r) )
+    {
+        PyErr_SetString(PyExc_TypeError,
+                        "hcalert.HeapsprayAlert must be callable");
+        //TODO: just Callable? or must type object?
+        return;
+    }
+    HeapsprayAlertType = (PyTypeObject *)r;    
 }

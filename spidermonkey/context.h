@@ -19,6 +19,7 @@ typedef struct {
     Runtime* rt;
     PyObject* global;
     PyObject* access;
+    PyObject* alertlist;
     JSContext* cx;
     JSObject* root;
     PyDictObject* classes;

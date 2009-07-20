@@ -58,18 +58,20 @@ Runtime_new_context(Runtime* self, PyObject* args, PyObject* kwargs)
     PyObject* tpl = NULL;
     PyObject* global = Py_None;
     PyObject* access = Py_None;
+    PyObject* alertlist = Py_None;
 
-    char* keywords[] = {"glbl", "access", NULL};
+    char* keywords[] = {"glbl", "access", "alertlist", NULL};
 
     if(!PyArg_ParseTupleAndKeywords(
         args, kwargs,
-        "|OO",
+        "|OOO",
         keywords,
         &global,
-        &access
+        &access,
+        &alertlist
     )) goto error;
 
-    tpl = Py_BuildValue("OOO", self, global, access);
+    tpl = Py_BuildValue("OOOO", self, global, access, alertlist);
     if(tpl == NULL) goto error;
 
     cx = PyObject_CallObject((PyObject*) ContextType, tpl);

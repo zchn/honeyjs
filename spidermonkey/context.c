@@ -288,20 +288,23 @@ Context_new(PyTypeObject* type, PyObject* args, PyObject* kwargs)
     Runtime* runtime = NULL;
     PyObject* global = NULL;
     PyObject* access = NULL;
-
-    char* keywords[] = {"runtime", "glbl", "access", NULL};
+    PyObject* alertlist = NULL;
+    
+    char* keywords[] = {"runtime", "glbl", "access", "alertlist", NULL};
 
     if(!PyArg_ParseTupleAndKeywords(
         args, kwargs,
-        "O!|OO",
+        "O!|OOO",
         keywords,
         RuntimeType, &runtime,
         &global,
-        &access
+        &access,
+        &alertlist
     )) goto error;
 
     if(global == Py_None) global = NULL;
     if(access == Py_None) access = NULL;
+    if(alertlist == Py_None) alertlist = NULL;
 
     if(global != NULL && !PyMapping_Check(global))
     {
@@ -317,6 +320,13 @@ Context_new(PyTypeObject* type, PyObject* args, PyObject* kwargs)
         goto error;
     }
 
+    if(alertlist != NULL && !PyList_Check(alertlist))
+    {
+        PyErr_SetString(PyExc_TypeError,
+                        "Alert list must be a list object.");
+        goto error;
+    }
+            
     self = (Context*) type->tp_alloc(type, 0);
     if(self == NULL) goto error;
 
@@ -370,6 +380,9 @@ Context_new(PyTypeObject* type, PyObject* args, PyObject* kwargs)
     if(access != NULL) Py_INCREF(access);
     self->access = access;
 
+    if(alertlist != NULL) Py_INCREF(alertlist);
+    self->alertlist = alertlist;
+
     // Setup counters for resource limits
     self->branch_count = 0;
     self->max_time = 0;
@@ -410,6 +423,7 @@ Context_dealloc(Context* self)
 
     Py_XDECREF(self->global);
     Py_XDECREF(self->access);
+    Py_XDECREF(self->alertlist);
     Py_XDECREF(self->objects);
     Py_XDECREF(self->classes);
     Py_XDECREF(self->rt);
@@ -537,6 +551,60 @@ done:
 }
 
 PyObject*
+Context_set_alertlist(Context* self, PyObject* args, PyObject* kwargs)
+{
+    PyObject* ret = NULL;
+    PyObject* newval = NULL;
+
+    if(!PyArg_ParseTuple(args, "|O", &newval)) goto done;
+    if(newval != NULL && newval != Py_None)
+    {
+        if(!PyList_Check(newval))
+        {
+            PyErr_SetString(PyExc_TypeError,
+                            "Alert list must be a list object.");
+            ret = NULL;
+            goto done;
+        }
+    }
+
+    ret = self->alertlist;
+
+    if(newval != NULL && newval != Py_None)
+    {
+        Py_INCREF(newval);
+        self->alertlist = newval;
+    }
+
+    if(ret == NULL)
+    {
+        ret = Py_None;
+        Py_INCREF(ret);
+    }
+
+done:
+    return ret;
+}
+
+PyObject*
+Context_get_alertlist(Context* self, PyObject* args, PyObject* kwargs)
+{
+    PyObject* ret = NULL;
+
+    ret = self->alertlist;
+
+    if(ret == NULL)
+    {
+        ret = Py_None;
+    }
+
+    Py_INCREF(ret);
+        
+    return ret;
+}
+
+
+PyObject*
 Context_execute(Context* self, PyObject* args, PyObject* kwargs)
 {
     PyObject* obj = NULL;
@@ -662,6 +730,18 @@ static PyMethodDef Context_methods[] = {
         (PyCFunction)Context_set_access,
         METH_VARARGS,
         "Set the access handler for wrapped python objects."
+    },
+    {
+        "set_alertlist",
+        (PyCFunction)Context_set_alertlist,
+        METH_VARARGS,
+        "Set the alert list for wrapped python objects."
+    },
+    {
+        "get_alertlist",
+        (PyCFunction)Context_get_alertlist,
+        METH_VARARGS,
+        "Get the alert list for wrapped python objects."
     },
     {
         "execute",
