@@ -13,10 +13,10 @@ class Alert:
 
 
 class ShellcodeAlert(Alert):
-    def __init__(self,aid=-1,msg="Shellcode Detected",misc={},shellcode):
+    def __init__(self,aid=-1,msg="Shellcode Detected",misc={},shellcode=""):
         Alert.__init__(self,"ALERT_SHELLCODE",aid,msg,misc)
         self.shellcode = shellcode;
 
 class HeapsprayAlert(Alert):
-    def __init__(self,aid=-1,msg="",misc={},sledgechar,entropy):
+    def __init__(self,aid=-1,msg="",misc={},sledgechar='\x90',entropy=-1):
         Alert.__init__(self,"ALERT_HEAPSPRAY",aid,msg,misc)

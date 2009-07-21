@@ -111,12 +111,14 @@ def platform_config():
             "-Wno-strict-prototypes" # Disable copius JS warnings
         ],
         "include_dirs": [
-            "spidermonkey/libjs",
-            "spidermonkey/%s-%s" % (sysname, machine)
+            #"spidermonkey/libjs",
+            "/usr/include/mozjs",
+            "/opt/libemu/include",
+            #"spidermonkey/%s-%s" % (sysname, machine)
         ],
-        "library_dirs": [],
+        "library_dirs": ["/usr/local/lib/","/opt/libemu/lib/libemu/"],
         "libraries": [],
-        "extra_link_args": []
+        "extra_link_args": ["js","emu"]
     }
 
     # Debug builds are useful for finding errors in

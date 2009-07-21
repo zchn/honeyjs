@@ -229,7 +229,11 @@ js_global_class = {
     JSCLASS_NO_OPTIONAL_MEMBERS
 };
 
+#ifdef MAX
+#undef MAX
+#endif
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
+
 JSBool
 branch_cb(JSContext* jscx, JSScript* script)
 {

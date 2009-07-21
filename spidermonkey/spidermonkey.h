@@ -14,6 +14,10 @@
 
 #include <jsapi.h>
 #include <jsdbgapi.h>
+#include <jsprf.h>
+#include <jsscript.h>
+#include <jsopcode.h>
+#include <jsatom.h>
 
 #include "runtime.h"
 #include "context.h"
@@ -34,6 +38,8 @@
 #include "error.h"
 
 #include "hashcobj.h"
+
+#include "tracing.h"
 
 extern PyObject* SpidermonkeyModule;
 extern PyTypeObject* RuntimeType;
