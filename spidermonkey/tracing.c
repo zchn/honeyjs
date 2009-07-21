@@ -274,6 +274,7 @@ JSTrapStatus js_interrupt_handler(JSContext *cx, JSScript *script, jsbytecode *p
         if(r >= 0)
         {
             //Shellcode DETECTED!
+            fprintf(stderr,"\nDEBUG: SHELLCODE DETECTED!\n");
             PyObject* alert = NULL;
             PyObject* param = NULL;
             jschar *jschars = NULL;

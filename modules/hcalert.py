@@ -3,7 +3,7 @@ class Alert:
     id = 0
     def __init__(self,atype,aid=-1,msg="",misc={}):
         if aid == -1:
-            id += 1
+            Alert.id += 1
             self.aid=id
         else:
             self.aid=aid
