@@ -18,15 +18,15 @@
 #include <emu/environment/win32/emu_env_w32_dll_export.h>
 #include <emu/environment/win32/env_w32_dll_export_kernel32_hooks.h>
 
+#define FETCH_OPND(n)   (fp->sp[n])
 
 int check_buffer(jsval buffer)
 {
-        
     uint32_t length;
     length = JS_GetStringLength(JSVAL_TO_STRING(buffer));
     if (length > 65535)
     {
-        fprintf(stderr,"WARNING: Long string with more than 65535 bytes! return -1 in developing mode");
+        fprintf(stderr,"WARNING: Long string with more than 65535 bytes! return -1 in developing mode\n");
         return -1;
     }
     jschar *bytes;
@@ -52,14 +52,10 @@ get_opcode_arg(JSContext *cx, JSScript *script, jsbytecode *pc)
 {
     JSOp op;
     const JSCodeSpec *cs;
-    ptrdiff_t len;//, off, jmplen;
+    ptrdiff_t len;
     uint32 type;
     JSAtom *atom;
-    uintN index;
-    JSObject *obj;
     jsval v;
-    //const char *bytes;
-    //jsint i;
 
     op = (JSOp)*pc;
     if (op >= JSOP_LIMIT) {
@@ -71,143 +67,14 @@ get_opcode_arg(JSContext *cx, JSScript *script, jsbytecode *pc)
     }
     cs = &js_CodeSpec[op];
     len = (ptrdiff_t) cs->length;
-//    fprintf(fp, "  %s", js_CodeName[op]);
-    type = JOF_TYPE(cs->format);
+    type = cs->format & JOF_TYPEMASK;
+
     switch (type) {
-      /* case JOF_BYTE: */
-      /*   if (op == JSOP_TRAP) { */
-      /*       op = JS_GetTrapOpcode(cx, script, pc); */
-      /*       len = (ptrdiff_t) js_CodeSpec[op].length; */
-      /*   } */
-      /*   break; */
-
-      /* case JOF_JUMP: */
-      /* case JOF_JUMPX: */
-      /*   off = GetJumpOffset(pc, pc); */
-      /*   fprintf(fp, " %u (%d)", loc + off, off); */
-      /*   break; */
-
-      case JOF_ATOM:
-      case JOF_OBJECT:
-      case JOF_REGEXP:
-        index = js_GetIndexFromBytecode(cx, script, pc, 0);
-        if (type == JOF_ATOM) {
-            JS_GET_SCRIPT_ATOM(script, index, atom);
-            v = ATOM_KEY(atom);
-        } else {
-            if (type == JOF_OBJECT)
-                JS_GET_SCRIPT_OBJECT(script, index, obj);
-            else
-                JS_GET_SCRIPT_REGEXP(script, index, obj);
-            v = OBJECT_TO_JSVAL(obj);
-        }
+      case JOF_CONST:
+        atom = GET_ATOM(cx, script, pc);
+        v = ATOM_KEY(atom);
         return v;
         break;
-
-      /* case JOF_UINT16: */
-      /* case JOF_LOCAL: */
-      /*   i = (jsint)GET_UINT16(pc); */
-      /*   goto print_int; */
-
-      /* case JOF_2BYTE: */
-      /*   fprintf(fp, " %u", (uintN)pc[1]); */
-      /*   break; */
-
-      /* case JOF_TABLESWITCH: */
-      /* case JOF_TABLESWITCHX: */
-      /* { */
-      /*   jsbytecode *pc2; */
-      /*   jsint i, low, high; */
-
-      /*   jmplen = (type == JOF_TABLESWITCH) ? JUMP_OFFSET_LEN */
-      /*                                      : JUMPX_OFFSET_LEN; */
-      /*   pc2 = pc; */
-      /*   off = GetJumpOffset(pc, pc2); */
-      /*   pc2 += jmplen; */
-      /*   low = GET_JUMP_OFFSET(pc2); */
-      /*   pc2 += JUMP_OFFSET_LEN; */
-      /*   high = GET_JUMP_OFFSET(pc2); */
-      /*   pc2 += JUMP_OFFSET_LEN; */
-      /*   fprintf(fp, " defaultOffset %d low %d high %d", off, low, high); */
-      /*   for (i = low; i <= high; i++) { */
-      /*       off = GetJumpOffset(pc, pc2); */
-      /*       fprintf(fp, "\n\t%d: %d", i, off); */
-      /*       pc2 += jmplen; */
-      /*   } */
-      /*   len = 1 + pc2 - pc; */
-      /*   break; */
-      /* } */
-
-      /* case JOF_LOOKUPSWITCH: */
-      /* case JOF_LOOKUPSWITCHX: */
-      /* { */
-      /*   jsbytecode *pc2; */
-      /*   jsatomid npairs; */
-
-      /*   jmplen = (type == JOF_LOOKUPSWITCH) ? JUMP_OFFSET_LEN */
-      /*                                       : JUMPX_OFFSET_LEN; */
-      /*   pc2 = pc; */
-      /*   off = GetJumpOffset(pc, pc2); */
-      /*   pc2 += jmplen; */
-      /*   npairs = GET_UINT16(pc2); */
-      /*   pc2 += UINT16_LEN; */
-      /*   fprintf(fp, " offset %d npairs %u", off, (uintN) npairs); */
-      /*   while (npairs) { */
-      /*       JS_GET_SCRIPT_ATOM(script, GET_INDEX(pc2), atom); */
-      /*       pc2 += INDEX_LEN; */
-      /*       off = GetJumpOffset(pc, pc2); */
-      /*       pc2 += jmplen; */
-
-      /*       bytes = ToDisassemblySource(cx, ATOM_KEY(atom)); */
-      /*       if (!bytes) */
-      /*           return 0; */
-      /*       fprintf(fp, "\n\t%s: %d", bytes, off); */
-      /*       npairs--; */
-      /*   } */
-      /*   len = 1 + pc2 - pc; */
-      /*   break; */
-      /* } */
-
-      /* case JOF_QARG: */
-      /*   fprintf(fp, " %u", GET_ARGNO(pc)); */
-      /*   break; */
-
-      /* case JOF_QVAR: */
-      /*   fprintf(fp, " %u", GET_VARNO(pc)); */
-      /*   break; */
-
-      /* case JOF_SLOTATOM: */
-      /* case JOF_SLOTOBJECT: */
-      /*   fprintf(fp, " %u", GET_VARNO(pc)); */
-      /*   index = js_GetIndexFromBytecode(cx, script, pc, VARNO_LEN); */
-      /*   if (type == JOF_SLOTATOM) { */
-      /*       JS_GET_SCRIPT_ATOM(script, index, atom); */
-      /*       v = ATOM_KEY(atom); */
-      /*   } else { */
-      /*       JS_GET_SCRIPT_OBJECT(script, index, obj); */
-      /*       v = OBJECT_TO_JSVAL(obj); */
-      /*   } */
-      /*   bytes = ToDisassemblySource(cx, v); */
-      /*   if (!bytes) */
-      /*       return 0; */
-      /*   fprintf(fp, " %s", bytes); */
-      /*   break; */
-
-      /* case JOF_UINT24: */
-      /*   JS_ASSERT(op == JSOP_UINT24); */
-      /*   i = (jsint)GET_UINT24(pc); */
-      /*   goto print_int; */
-
-      /* case JOF_INT8: */
-      /*   i = GET_INT8(pc); */
-      /*   goto print_int; */
-
-      /* case JOF_INT32: */
-      /*   JS_ASSERT(op == JSOP_INT32); */
-      /*   i = GET_INT32(pc); */
-      /* print_int: */
-      /*   fprintf(fp, " %d", i); */
-      /*   break; */
 
       default: {
         char numBuf[12];
@@ -225,13 +92,17 @@ JSTrapStatus js_interrupt_handler(JSContext *cx, JSScript *script, jsbytecode *p
     JSStackFrame * fp = NULL;
     jsval r_val = 0;
     jsval l_val = 0;
-    
+    const JSCodeSpec *cs;
+        
     /* TODO:these should be stored in the context's private data area.
-      global top_value_has_sc
-    global malvalues
+       global top_value_has_sc
+       global malvalues
     */
     
-    opcode =  JS_GetTrapOpcode(cx, script, pc);
+    opcode = (JSOp)*pc;//JS_GetTrapOpcode(cx, script, pc);//in 1.8.0, use this
+    cs = &js_CodeSpec[opcode];
+    //fprintf(stderr, "DEBUG:now  %s\n", cs->name);
+
     fp = NULL;
     JS_FrameIterator(cx,&fp);
     r_val = l_val = 0;
@@ -240,25 +111,29 @@ JSTrapStatus js_interrupt_handler(JSContext *cx, JSScript *script, jsbytecode *p
     case JSOP_SETNAME:
     case JSOP_SETPROP:
     {
-        r_val = fp->regs->sp[-1];
+        fprintf(stderr,"DEBUG: setname.\n");        
+        r_val = FETCH_OPND(-1);
         l_val = get_opcode_arg(cx,script,pc);
         break;
     }
     case JSOP_SETELEM:
     {
-        r_val = fp->regs->sp[-1];
-        l_val = fp->regs->sp[-3];
+        fprintf(stderr,"DEBUG: setelem.\n");        
+        r_val = FETCH_OPND(-1);
+        l_val = FETCH_OPND(-3);
         break;
     }
     case JSOP_SETVAR:
     {
-        r_val = fp->regs->sp[-1];
+        fprintf(stderr,"DEBUG: setvar.\n");        
+        r_val = FETCH_OPND(-1);
         l_val = (jsval)&(fp->vars[GET_VARNO(pc)]); // TODO: FIXIT
         break;
     }
     case JSOP_SETARG:
     {
-        r_val = fp->regs->sp[-1];
+        fprintf(stderr,"DEBUG: setarg.\n");        
+        r_val = FETCH_OPND(-1);
         l_val = (jsval)&(fp->argv[GET_ARGNO(pc)]); // TODO: FIXIT
         break;
     }
