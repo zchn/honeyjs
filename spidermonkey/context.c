@@ -599,7 +599,7 @@ Context_get_alertlist(Context* self, PyObject* args, PyObject* kwargs)
 
     if(ret == NULL)
     {
-        ret = Py_None;
+            ret = Py_None;
     }
 
     Py_INCREF(ret);

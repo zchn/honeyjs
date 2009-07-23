@@ -22,6 +22,7 @@
 
 int check_buffer(jsval buffer)
 {
+    //fprintf(stderr,"DEBUG:Checking buffer\n");
     uint32_t length;
     length = JS_GetStringLength(JSVAL_TO_STRING(buffer));
     if (length > 65535)
@@ -111,28 +112,24 @@ JSTrapStatus js_interrupt_handler(JSContext *cx, JSScript *script, jsbytecode *p
     case JSOP_SETNAME:
     case JSOP_SETPROP:
     {
-        fprintf(stderr,"DEBUG: setname.\n");        
         r_val = FETCH_OPND(-1);
         l_val = get_opcode_arg(cx,script,pc);
         break;
     }
     case JSOP_SETELEM:
     {
-        fprintf(stderr,"DEBUG: setelem.\n");        
         r_val = FETCH_OPND(-1);
         l_val = FETCH_OPND(-3);
         break;
     }
     case JSOP_SETVAR:
     {
-        fprintf(stderr,"DEBUG: setvar.\n");        
         r_val = FETCH_OPND(-1);
         l_val = (jsval)&(fp->vars[GET_VARNO(pc)]); // TODO: FIXIT
         break;
     }
     case JSOP_SETARG:
     {
-        fprintf(stderr,"DEBUG: setarg.\n");        
         r_val = FETCH_OPND(-1);
         l_val = (jsval)&(fp->argv[GET_ARGNO(pc)]); // TODO: FIXIT
         break;
