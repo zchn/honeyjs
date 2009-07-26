@@ -6,17 +6,6 @@
 
 #include <emu/emu.h>
 #include <emu/emu_shellcode.h>
-#include <emu/emu_memory.h>
-#include <emu/emu_cpu.h>
-#include <emu/emu_log.h>
-#include <emu/emu_cpu_data.h>
-#include <emu/emu_cpu_stack.h>
-#include <emu/environment/emu_profile.h>
-#include <emu/environment/emu_env.h>
-#include <emu/environment/win32/emu_env_w32.h>
-#include <emu/environment/win32/emu_env_w32_dll.h>
-#include <emu/environment/win32/emu_env_w32_dll_export.h>
-#include <emu/environment/win32/env_w32_dll_export_kernel32_hooks.h>
 
 #define FETCH_OPND(n)   (fp->sp[n])
 
@@ -157,11 +146,12 @@ JSTrapStatus js_interrupt_handler(JSContext *cx, JSScript *script, jsbytecode *p
             bytes = (char *)jschars;
             length = JS_GetStringLength(JSVAL_TO_STRING(r_val));
             
-            param = Py_BuildValue("is{}s#",
+            param = Py_BuildValue("iss#i",
                                   -1,
                                   "Shellcode Detected!",
                                   bytes,
-                                  length*sizeof(jschar));
+                                  length*sizeof(jschar),
+                                  r);
             if(param == NULL) goto error;
             
             alert = PyObject_CallObject((PyObject*)ShellcodeAlertType,param);
@@ -202,190 +192,5 @@ error:
 
 #if 0
 
-/*=================== surpport for shellcode analysis  =================
- *
- */
-
-uint32_t user_hook_URLDownloadToFile(struct emu_env *env, struct emu_env_hook *hook, ...)
-{
-	printf("DEBUG: Hook me Captain Cook!\n");
-	printf("DEBUG: %s:%i %s\n",__FILE__,__LINE__,__FUNCTION__);
-
-	va_list vl;
-	va_start(vl, hook);
-
-	/*void * pCaller    = */(void)va_arg(vl, void *);
-	char * szURL      = va_arg(vl, char *);
-	char * szFileName = va_arg(vl, char *);
-	/*int    dwReserved = */(void)va_arg(vl, int   );
-	/*void * lpfnCB     = */(void)va_arg(vl, void *);
-
-	va_end(vl);
-
-        PyObject *list;
-        list = hook->hook.win->userdata;
-        if(list != NULL && szURL != NULL){
-                PyList_Append(list,PyString_FromString(szURL));
-        }
-        printf("DEBUG: download %s -> %s\n", szURL, szFileName);
-	return 0;
-}
-
-
-#define CODE_OFFSET 0x417000
-
-
-int getpctest(char *opts_scode,uint32_t opts_size)
-{
-	struct emu *e = emu_new();
-        int opts_offset;
-        
-	if ( (opts_offset = emu_shellcode_test(e, (uint8_t *)opts_scode, opts_size)) >= 0 )
-		printf("DEBUG: %s offset = 0x%08x\n","SUCCESS", opts_offset);
-	else
-		printf("DEBUG: FAILED retvar:%d\n",opts_offset);
-
-	emu_free(e);
-
-	return opts_offset;
-}
-
-int run_shellcode(char *opts_scode, uint32_t opts_size, int opts_offset, uint32_t opts_steps, PyObject *urllist)
-{
-        struct emu *e = emu_new();
-        int offset = getpctest(opts_scode,opts_size);
-        if(offset >= 0) opts_offset = offset;
-
-	struct emu_cpu *cpu = emu_cpu_get(e);
-	struct emu_memory *mem = emu_memory_get(e);
-
-	struct emu_env *env = emu_env_new(e);
-	env->profile = emu_profile_new();
-	printf("DEBUG: emulating shellcode size %d",opts_size);
-
-	int j;
-	for ( j=0;j<8;j++ )
-	{
-		emu_cpu_reg32_set(cpu,j , 0);
-	}
-
-
-
-	/* write the code to the offset */
-	int static_offset = CODE_OFFSET;
-	emu_memory_write_block(mem, static_offset, opts_scode,  opts_size);
-
-
-
-	/* set eip to the code */
-	emu_cpu_eip_set(emu_cpu_get(e), static_offset + opts_offset);
-
-	emu_memory_write_block(mem, 0x0012fe98, opts_scode,  opts_size);
-	emu_cpu_reg32_set(emu_cpu_get(e), esp, 0x0012fe98);
-
-
-
-
-	emu_memory_write_dword(mem, 0xef787c3c,  4711);
-	emu_memory_write_dword(mem, 0x0,  4711);
-	emu_memory_write_dword(mem, 0x00416f9a,  4711);
-	emu_memory_write_dword(mem, 0x0044fcf7, 4711);
-	emu_memory_write_dword(mem, 0x00001265, 4711);
-	emu_memory_write_dword(mem, 0x00002583, 4711);
-	emu_memory_write_dword(mem, 0x00e000de, 4711);
-	emu_memory_write_dword(mem, 0x01001265, 4711);
-	emu_memory_write_dword(mem, 0x8a000066, 4711);
-
-	/* set the flags */
-	emu_cpu_eflags_set(cpu, 0);
-
-	/* IAT for sqlslammer */
-	emu_memory_write_dword(mem, 0x42AE1018, 0x7c801D77);
-	emu_memory_write_dword(mem, 0x42ae1010, 0x7c80ADA0);
-	emu_memory_write_dword(mem, 0x7c80ADA0, 0x51EC8B55);
-
-	if ( env == NULL )
-	{
-		fprintf(stderr,"%s \n", emu_strerror(e));
-		fprintf(stderr,"%s \n", strerror(emu_errno(e)));
-		return -1;
-	}
-
-	emu_env_w32_load_dll(env->env.win, "urlmon.dll");
-        emu_env_w32_export_hook(env, "URLDownloadToFileA", user_hook_URLDownloadToFile, urllist);
-
-
-        j=0;
-
-	int ret; 
-	uint32_t eipsave = 0;
-        
-	for ( j=0;j<opts_steps;j++ )
-	{
-                //emu_log_level_set(emu_logging_get(e),EMU_LOG_DEBUG);
-                //emu_cpu_debug_print(cpu);
-                //emu_log_level_set(emu_logging_get(e),EMU_LOG_NONE);
-
-		if ( cpu->repeat_current_instr == false )
-			eipsave = emu_cpu_eip_get(emu_cpu_get(e));
-
-		struct emu_env_hook *hook = NULL;
-
-		ret = 0;
-
-		hook = emu_env_w32_eip_check(env);
-
-		if ( hook != NULL )
-		{
-                        if ( hook->hook.win->fnhook == NULL )
-			{
-				fprintf(stderr,"unhooked call to %s\n", hook->hook.win->fnname);
-				break;
-			}
-                        
-		}
-		else
-		{
-
-			ret = emu_cpu_parse(emu_cpu_get(e));
-                        
-                        emu_log_level_set(emu_logging_get(e),EMU_LOG_DEBUG);
-                        logDebug(e, "%s\n", cpu->instr_string);
-                        emu_log_level_set(emu_logging_get(e),EMU_LOG_NONE);
-
-			struct emu_env_hook *hook =NULL;
-
-			if ( ret != -1 )
-			{
-				if ( hook == NULL )
-				{
-                                        emu_log_level_set(emu_logging_get(e),EMU_LOG_DEBUG);
-                                        ret = emu_cpu_step(emu_cpu_get(e));
-                                        emu_log_level_set(emu_logging_get(e),EMU_LOG_NONE);
-				}
-				else
-				{
-                                        fprintf(2,"DEBUG: Why here?\n");
-					/* if ( hook->hook.lin->fnhook  */
-					/* 	hook->hook.lin->fnhook(env, hook); */
-					/* else */
-					/* 	break; */
-				}
-			}
-
-			if ( ret == -1 )
-			{
-				//printf("cpu error %s\n", emu_strerror(e));
-				break;
-			}
-		}
-	}
-
-	printf("stepcount %i\n",j);
-
-	emu_profile_debug(env->profile);//Print profile
-        emu_free(e);
-	return 0;
-}
 
 #endif
