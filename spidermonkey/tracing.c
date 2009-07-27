@@ -2,6 +2,9 @@
  */
 #include "spidermonkey.h"
 
+#include <math.h>
+
+
 #include <jsinterp.h>
 
 #include <emu/emu.h>
@@ -9,36 +12,82 @@
 
 #define FETCH_OPND(n)   (fp->sp[n])
 
-int check_buffer(jsval buffer)
+#define MIN_STR_LEN_TO_CHECK 30
+#define MAX_STR_LEN_TO_CHECK 65535
+#define HEAPSPRAY_LEN MAX_STR_LEN_TO_CHECK
+
+typedef struct _heapspray_info{
+    double entropy;
+    char most_char;
+    uint32_t most_char_cnt;
+    char sec_char;
+    uint32_t sec_char_cnt;
+} heapspray_info;
+
+heapspray_info check_heapspray(const unsigned char *buffer,uint32_t length)
+{
+    heapspray_info ret;
+    uint32_t char_tbl[256];
+
+    memset(&ret,0,sizeof(heapspray_info));
+    memset(char_tbl,0,sizeof(uint32_t)*256);
+
+    uint32_t i;
+    for (i = 0; i < length; ++i)
+    {
+        char_tbl[buffer[i]]++;
+    }
+
+    double nentropy = 0;
+    double log2 = log(2);
+    for (i = 0; i < 256; ++i)
+    {
+        if(char_tbl[i] == 0)
+            continue;
+        nentropy += char_tbl[i] * 1.0 /length * log(char_tbl[i] * 1.0 /length) / log2;
+        if(char_tbl[i] > ret.most_char_cnt){
+            ret.sec_char = ret.most_char;
+            ret.sec_char_cnt = ret.most_char_cnt;
+            ret.most_char = i;
+            ret.most_char_cnt = char_tbl[i];
+        }
+    }
+    ret.entropy  = -nentropy;
+    fprintf(stderr,"DEBUG: entropy:%lf, max:%c*%d, sec:%c*%d\n",
+            ret.entropy,
+            ret.most_char,
+            ret.most_char_cnt,
+            ret.sec_char,
+            ret.sec_char_cnt);
+            
+    return ret;
+}
+
+int check_buffer(const unsigned char *bytes,uint32_t length)
 {
     //fprintf(stderr,"DEBUG:Checking buffer\n");
-    uint32_t length;
-    length = JS_GetStringLength(JSVAL_TO_STRING(buffer));
-    if (length > 65535)
+    if (length > MAX_STR_LEN_TO_CHECK)
     {
-        fprintf(stderr,"WARNING: Long string with more than 65535 bytes! return -1 in developing mode\n");
+        fprintf(stderr,"WARNING: Long string with more than %d bytes! return -1 in developing mode\n",MAX_STR_LEN_TO_CHECK);
         return -1;
     }
-    jschar *bytes;
-    bytes = JS_GetStringChars(JSVAL_TO_STRING(buffer));
     struct emu * e;
     e = emu_new();
     
     int result;
-    result = emu_shellcode_test(e, (unsigned char *)bytes, length * sizeof(jschar));
+    result = emu_shellcode_test(e, (unsigned char *)bytes, length);
     emu_free(e);
     if (result >= 0)
         return result;
 
     e = emu_new();
-    result = emu_shellcode_test(e, (unsigned char *)bytes, length * sizeof(jschar));
+    result = emu_shellcode_test(e, (unsigned char *)bytes, length);
     emu_free(e);
     return result;
 }
 
 
-jsval
-get_opcode_arg(JSContext *cx, JSScript *script, jsbytecode *pc)
+jsval get_opcode_arg(JSContext *cx, JSScript *script, jsbytecode *pc)
 {
     JSOp op;
     const JSCodeSpec *cs;
@@ -127,63 +176,103 @@ JSTrapStatus js_interrupt_handler(JSContext *cx, JSScript *script, jsbytecode *p
         break;
     }
     if(r_val != 0 &&
-       JSVAL_IS_STRING(r_val) &&
-       JS_GetStringLength(JSVAL_TO_STRING(r_val)) > 30) //TODO: Adjust the threshold
+       JSVAL_IS_STRING(r_val))
     {
+        uint32_t length = 0;
+        length = JS_GetStringLength(JSVAL_TO_STRING(r_val)) * sizeof(jschar);
+        if(length < MIN_STR_LEN_TO_CHECK){
+            goto end;
+        }
         int r = 0;
-        r = check_buffer(r_val);
-        if(r >= 0)
-        {
-            //Shellcode DETECTED!
-            fprintf(stderr,"\nDEBUG: SHELLCODE DETECTED!\n");
+        unsigned char *bytes = NULL;
+        jschar *jschars = NULL;
+        jschars = JS_GetStringChars(JSVAL_TO_STRING(r_val));
+        bytes = (unsigned char *)jschars;
+        if(length > 65535){
+            //Heapspray DETECTED!
+            fprintf(stderr,"\nDEBUG: HEAPSPRAY DETECTED!\n");
+
+            heapspray_info hsinfo;
+            hsinfo = check_heapspray(bytes,length);
             PyObject* alert = NULL;
             PyObject* param = NULL;
-            jschar *jschars = NULL;
-            char *bytes = NULL;
             Context* pycx = NULL;
-            int length = 0;
-            jschars = JS_GetStringChars(JSVAL_TO_STRING(r_val));
-            bytes = (char *)jschars;
-            length = JS_GetStringLength(JSVAL_TO_STRING(r_val));
             
-            param = Py_BuildValue("iss#i",
+            param = Py_BuildValue("isdi{s:s#,s:i,s:s#,s:i}",
                                   -1,
-                                  "Shellcode Detected!",
-                                  bytes,
-                                  length*sizeof(jschar),
-                                  r);
+                                  "Heapspray Detected!",
+                                  hsinfo.entropy,
+                                  length,
+                                  "sledge_char",
+                                  &(hsinfo.most_char),
+                                  1,
+                                  "sledge_cnt",
+                                  hsinfo.most_char_cnt,
+                                  "sec_char",
+                                  &(hsinfo.sec_char),
+                                  1,
+                                  "sec_char_cnt",
+                                  hsinfo.sec_char_cnt);
             if(param == NULL) goto error;
             
-            alert = PyObject_CallObject((PyObject*)ShellcodeAlertType,param);
+            alert = PyObject_CallObject((PyObject*)HeapsprayAlertType,param);
             if(alert == NULL) goto error;
             pycx = (Context*) JS_GetContextPrivate(cx);
-
+            
             if(PyList_Append(pycx->alertlist,alert) != 0)
             {
                 goto error;
             }
-            //TODO: FIXME: is it necesary to DECREF alert?
-            
-            /*         if rt.malvariables.has_key(l_val): */
-            /*             alert = rt.malvariables[l_val] */
-            /*         else: */
-            /*             alert = Alert(0,l_val,"Shellcode Detected",{"hit":0}) */
-            /*             rt.malvariables[l_val]=alert */
-            /*             rt.alerts.append(alert) */
-            /*         alert.misc["hit"]+=1 */
-
-            /*         jschars = JS_GetStringChars(JSVAL_TO_STRING(r_val)) */
-            /*         bytes = <char *>jschars */
-            /*         length = JS_GetStringLength(JSVAL_TO_STRING(r_val)) */
-            /*         s = PyString_FromStringAndSize(bytes, length*2)#sizeof(jschar)) */
-            /*         alert.misc["contents"] = s */
-            /*         alert.misc["offset"] = r */
-            /*         #f = open("shellcodes/"+str(l_val)+".sc","w") */
-            /*         #f.write(s) */
-            /*         #f.close() */
-            /*         #print "DEBUG: !!!SC DETECTED at "+str(l_val)+"="+str(r_val)+"size:"+str(length*2) */
+        }else{
+            r = check_buffer(bytes,length);
+            if(r >= 0)
+            {
+                //Shellcode DETECTED!
+                fprintf(stderr,"\nDEBUG: SHELLCODE DETECTED!\n");
+                PyObject* alert = NULL;
+                PyObject* param = NULL;
+                Context* pycx = NULL;
+                
+                param = Py_BuildValue("iss#i",
+                                      -1,
+                                      "Shellcode Detected!",
+                                      bytes,
+                                      length*sizeof(jschar),
+                                      r);
+                if(param == NULL) goto error;
+                
+                alert = PyObject_CallObject((PyObject*)ShellcodeAlertType,param);
+                if(alert == NULL) goto error;
+                pycx = (Context*) JS_GetContextPrivate(cx);
+                
+                if(PyList_Append(pycx->alertlist,alert) != 0)
+                {
+                    goto error;
+                }
+                //TODO: FIXME: is it necesary to DECREF alert?
+                
+                /*         if rt.malvariables.has_key(l_val): */
+                /*             alert = rt.malvariables[l_val] */
+                /*         else: */
+                /*             alert = Alert(0,l_val,"Shellcode Detected",{"hit":0}) */
+                /*             rt.malvariables[l_val]=alert */
+                /*             rt.alerts.append(alert) */
+                /*         alert.misc["hit"]+=1 */
+                
+                /*         jschars = JS_GetStringChars(JSVAL_TO_STRING(r_val)) */
+                /*         bytes = <char *>jschars */
+                /*         length = JS_GetStringLength(JSVAL_TO_STRING(r_val)) */
+                /*         s = PyString_FromStringAndSize(bytes, length*2)#sizeof(jschar)) */
+                /*         alert.misc["contents"] = s */
+                /*         alert.misc["offset"] = r */
+                /*         #f = open("shellcodes/"+str(l_val)+".sc","w") */
+                /*         #f.write(s) */
+                /*         #f.close() */
+                /*         #print "DEBUG: !!!SC DETECTED at "+str(l_val)+"="+str(r_val)+"size:"+str(length*2) */
+            }
         }
     }
+end:
     return JSTRAP_CONTINUE;
 error:
     return  JSTRAP_ERROR;
