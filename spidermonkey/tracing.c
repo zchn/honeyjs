@@ -53,6 +53,7 @@ heapspray_info check_heapspray(const unsigned char *buffer,uint32_t length)
         }
     }
     ret.entropy  = -nentropy;
+    if(ret.entropy < 0.000001 && ret.entropy > -0.000001) ret.entropy = 0;
     fprintf(stderr,"DEBUG: entropy:%lf, max:%c*%d, sec:%c*%d\n",
             ret.entropy,
             ret.most_char,
@@ -133,11 +134,6 @@ JSTrapStatus js_interrupt_handler(JSContext *cx, JSScript *script, jsbytecode *p
     jsval l_val = 0;
     const JSCodeSpec *cs;
         
-    /* TODO:these should be stored in the context's private data area.
-       global top_value_has_sc
-       global malvalues
-    */
-    
     opcode = (JSOp)*pc;//JS_GetTrapOpcode(cx, script, pc);//in 1.8.0, use this
     cs = &js_CodeSpec[opcode];
     //fprintf(stderr, "DEBUG:now  %s\n", cs->name);
@@ -197,32 +193,74 @@ JSTrapStatus js_interrupt_handler(JSContext *cx, JSScript *script, jsbytecode *p
             PyObject* alert = NULL;
             PyObject* param = NULL;
             Context* pycx = NULL;
-            
-            param = Py_BuildValue("isdi{s:s#,s:i,s:s#,s:i}",
-                                  -1,
-                                  "Heapspray Detected!",
-                                  hsinfo.entropy,
-                                  length,
-                                  "sledge_char",
-                                  &(hsinfo.most_char),
-                                  1,
-                                  "sledge_cnt",
-                                  hsinfo.most_char_cnt,
-                                  "sec_char",
-                                  &(hsinfo.sec_char),
-                                  1,
-                                  "sec_char_cnt",
-                                  hsinfo.sec_char_cnt);
-            if(param == NULL) goto error;
-            
-            alert = PyObject_CallObject((PyObject*)HeapsprayAlertType,param);
-            if(alert == NULL) goto error;
             pycx = (Context*) JS_GetContextPrivate(cx);
+
+            uint32_t uniqueid = (uint32_t)pycx + (uint32_t)l_val;
             
-            if(PyList_Append(pycx->alertlist,alert) != 0)
-            {
-                goto error;
+            PyObject *str = PyString_FromString("alert_by_uid");
+            PyObject *alert_by_uid = NULL;
+            if (str == NULL) goto error;
+            alert_by_uid = PyObject_GetAttr((PyObject *)HeapsprayAlertType,str);
+            Py_DECREF(str);
+            str = NULL;
+            if (alert_by_uid == NULL) goto error;
+
+            PyObject *pyuid = Py_BuildValue("i",uniqueid);
+            if (PyDict_Contains(alert_by_uid,pyuid)){
+                alert = PyDict_GetItem(alert_by_uid,pyuid);
+                if(alert == NULL) goto error;
+
+                PyObject *raiseret = PyObject_CallMethod(alert,
+                                                         "reraise",
+                                                         "sdi{s:s#,s:i,s:s#,s:i}",
+                                                         "Previous",
+                                                         hsinfo.entropy,
+                                                         length,
+                                                         "sledge_char",
+                                                         &(hsinfo.most_char),
+                                                         1,
+                                                         "sledge_cnt",
+                                                         hsinfo.most_char_cnt,
+                                                         "sec_char",
+                                                         &(hsinfo.sec_char),
+                                                         1,
+                                                         "sec_char_cnt",
+                                                         hsinfo.sec_char_cnt);
+                if(raiseret == NULL) goto error;
+                Py_DECREF(raiseret);
+                raiseret = NULL;                                                         
+            }else{            
+                param = Py_BuildValue("isdii{s:s#,s:i,s:s#,s:i}",
+                                      -1,
+                                      "Heapspray Detected!",
+                                      hsinfo.entropy,
+                                      length,
+                                      uniqueid,
+                                      "sledge_char",
+                                      &(hsinfo.most_char),
+                                      1,
+                                      "sledge_cnt",
+                                      hsinfo.most_char_cnt,
+                                      "sec_char",
+                                      &(hsinfo.sec_char),
+                                      1,
+                                      "sec_char_cnt",
+                                      hsinfo.sec_char_cnt);
+                if(param == NULL) goto error;
+            
+                alert = PyObject_CallObject((PyObject*)HeapsprayAlertType,param);
+                Py_DECREF(param);
+                param = NULL;
+                if(alert == NULL) goto error;
+                if(PyList_Append(pycx->alertlist,alert) != 0)
+                {
+                    goto error;
+                }
+                Py_DECREF(alert);
+                alert = NULL;
             }
+            Py_DECREF(pyuid);
+            pyuid = NULL;
         }else{
             r = check_buffer(bytes,length);
             if(r >= 0)
@@ -242,6 +280,8 @@ JSTrapStatus js_interrupt_handler(JSContext *cx, JSScript *script, jsbytecode *p
                 if(param == NULL) goto error;
                 
                 alert = PyObject_CallObject((PyObject*)ShellcodeAlertType,param);
+                Py_DECREF(param);
+                param = NULL;
                 if(alert == NULL) goto error;
                 pycx = (Context*) JS_GetContextPrivate(cx);
                 
@@ -249,6 +289,8 @@ JSTrapStatus js_interrupt_handler(JSContext *cx, JSScript *script, jsbytecode *p
                 {
                     goto error;
                 }
+                Py_DECREF(alert);
+                alert = NULL;
                 //TODO: FIXME: is it necesary to DECREF alert?
                 
                 /*         if rt.malvariables.has_key(l_val): */
