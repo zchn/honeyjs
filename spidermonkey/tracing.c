@@ -275,7 +275,7 @@ JSTrapStatus js_interrupt_handler(JSContext *cx, JSScript *script, jsbytecode *p
                                       -1,
                                       "Shellcode Detected!",
                                       bytes,
-                                      length*sizeof(jschar),
+                                      length,
                                       r);
                 if(param == NULL) goto error;
                 
