@@ -54,12 +54,12 @@ heapspray_info check_heapspray(const unsigned char *buffer,uint32_t length)
     }
     ret.entropy  = -nentropy;
     if(ret.entropy < 0.000001 && ret.entropy > -0.000001) ret.entropy = 0;
-    fprintf(stderr,"DEBUG: entropy:%lf, max:%c*%d, sec:%c*%d\n",
-            ret.entropy,
-            ret.most_char,
-            ret.most_char_cnt,
-            ret.sec_char,
-            ret.sec_char_cnt);
+    /* fprintf(stderr,"DEBUG: entropy:%lf, max:%c*%d, sec:%c*%d\n", */
+    /*         ret.entropy, */
+    /*         ret.most_char, */
+    /*         ret.most_char_cnt, */
+    /*         ret.sec_char, */
+    /*         ret.sec_char_cnt); */
             
     return ret;
 }
@@ -186,7 +186,7 @@ JSTrapStatus js_interrupt_handler(JSContext *cx, JSScript *script, jsbytecode *p
         bytes = (unsigned char *)jschars;
         if(length > 65535){
             //Heapspray DETECTED!
-            fprintf(stderr,"\nDEBUG: HEAPSPRAY DETECTED!\n");
+            /* fprintf(stderr,"\nDEBUG: HEAPSPRAY DETECTED!\n"); */
 
             heapspray_info hsinfo;
             hsinfo = check_heapspray(bytes,length);
@@ -266,7 +266,7 @@ JSTrapStatus js_interrupt_handler(JSContext *cx, JSScript *script, jsbytecode *p
             if(r >= 0)
             {
                 //Shellcode DETECTED!
-                fprintf(stderr,"\nDEBUG: SHELLCODE DETECTED!\n");
+                /* fprintf(stderr,"\nDEBUG: SHELLCODE DETECTED!\n"); */
                 PyObject* alert = NULL;
                 PyObject* param = NULL;
                 Context* pycx = NULL;
